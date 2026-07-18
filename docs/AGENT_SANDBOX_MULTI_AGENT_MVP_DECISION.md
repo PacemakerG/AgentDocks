@@ -2,32 +2,49 @@
 
 > 决策日期：2026 年 7 月  
 > 基础项目：[agent-sandbox/agent-sandbox](https://github.com/agent-sandbox/agent-sandbox)  
-> 参考项目：[clawfleet/ClawFleet](https://github.com/clawfleet/ClawFleet)
+> 产品与管理参考：[clawfleet/ClawFleet](https://github.com/clawfleet/ClawFleet)
 
 ## 一、最终结论
 
 本项目应当：
 
-> **以 Agent Sandbox 为底座，在其 Kubernetes Sandbox 管理能力之上部署一套最小 Multi-Agent 系统。**
+> **以 Agent Sandbox 为 Kubernetes Sandbox 底座，在其上部署一套最小 Multi-Agent 系统；同时明确借鉴 ClawFleet 的 Agent 实例管理、生命周期操作、实时资源监控和统一管理界面。**
 
 不建议以 ClawFleet 为底座，再把其 Docker 管理层整体改造成 Kubernetes。
 
-ClawFleet 只用于借鉴：
+两个项目的分工应当明确：
 
-- 一个 Agent 对应一个独立运行实例的产品表达。
-- Agent 卡片、状态、资源、日志和生命周期操作界面。
-- 多个 Agent 的统一管理视图。
+```text
+ClawFleet 提供产品与管理参考
+- 一个 Agent 对应一个独立运行实例
+- Agent 实例列表和卡片
+- 创建、启动、停止、重启、销毁
+- CPU、内存实时状态
+- 实时日志和生命周期事件
+- 终端、桌面和运行时配置入口
 
-真正的基础设施底座仍然使用 Agent Sandbox：
+Agent Sandbox 提供实际基础设施底座
+- Go 控制面
+- Kubernetes 原生部署
+- Sandbox 创建、暂停、恢复和删除
+- CPU、内存等资源配置
+- Sandbox Pool 和超时回收
+- Pod 生命周期和 Kubernetes 接入
+```
 
-- Go 后端。
-- Kubernetes 原生部署。
-- Sandbox 创建、暂停、恢复和删除。
-- CPU、内存等资源配置。
-- Sandbox Pool 和超时回收。
-- REST API 与现有管理界面。
+最终不是简单把两个项目拼接，而是形成：
 
-E2B 兼容不是项目主线。MVP 优先使用 Agent Sandbox 自身的 API 和内部管理能力，E2B 接口仅保留为可选兼容层。
+```text
+ClawFleet 风格的 Agent 管理体验
+              ↓
+自己实现的最小 Agent 调度层
+              ↓
+Agent Sandbox 的 Sandbox 管理能力
+              ↓
+Kubernetes Pod 和容器资源
+```
+
+E2B 兼容不是项目主线。MVP 优先使用 Agent Sandbox 自身 API 和内部管理能力，E2B 接口只保留为可选兼容层。
 
 ---
 
@@ -49,7 +66,7 @@ Kubernetes 调度 Pod
 超时、失败或完成后回收资源
 ```
 
-在这个基础上增加 Multi-Agent，只需要补充 Agent 语义和任务调度，而不用重新实现 Kubernetes 接入层。
+在这个基础上增加 Multi-Agent，只需要补充 Agent 语义和任务调度，不用重新实现 Kubernetes 接入层。
 
 需要新增的核心关系是：
 
@@ -80,7 +97,149 @@ Task
 
 ---
 
-## 三、为什么不以 ClawFleet 为底座
+## 三、ClawFleet 具体借鉴什么
+
+ClawFleet 不能只被理解为一个前端参考项目。它已经实现了一套较完整的单机 Agent 实例管理体验，值得借鉴的是下面四部分。
+
+### 3.1 Agent 实例抽象
+
+ClawFleet 将每个 Agent 表达为一个独立实例：
+
+```text
+Agent Instance
+├── runtime：OpenClaw / Hermes
+├── container
+├── model configuration
+├── character / role
+├── channel / tools
+├── runtime status
+└── logs / resource stats
+```
+
+AgentDocks 应采用相同的产品表达，但底层映射改为：
+
+```text
+AgentRun
+├── agent_role
+├── runtime_image
+├── sandbox_id
+├── pod_name
+├── CPU / memory
+├── status
+├── retry_count
+└── logs / events
+```
+
+也就是：
+
+> ClawFleet 中一个 Agent 对应一个 Docker 容器；AgentDocks 中一个 AgentRun 对应一个 Agent Sandbox，再对应一个 Kubernetes Pod。
+
+### 3.2 生命周期管理交互
+
+借鉴 ClawFleet 的统一生命周期操作：
+
+- 创建 Agent 实例。
+- 启动。
+- 停止。
+- 重启。
+- 删除和清理数据。
+- 进入终端。
+- 查看实例详情。
+
+在 AgentDocks 中，对应为：
+
+```text
+Create AgentRun
+→ Create Sandbox
+→ Wait Pod Ready
+→ Start Agent
+→ Stop / Retry / Cancel
+→ Delete Sandbox
+```
+
+### 3.3 Monitoring：资源、日志和事件
+
+ClawFleet 已经提供三类基础运行信息：
+
+```text
+实时 CPU / 内存
+实时容器日志
+创建、启动、停止等生命周期事件
+```
+
+AgentDocks 的第一版应借鉴这种监控体验，但不重复实现 AgentLens 的深度 Trace。
+
+前端至少展示：
+
+- Agent 当前状态。
+- Sandbox 和 Pod 名称。
+- 申请的 CPU、内存。
+- 当前 CPU、内存使用情况；如果第一版取不到实时值，先展示资源申请值和 Pod 状态。
+- Sandbox 创建、启动、失败、重试和回收事件。
+- Agent stdout / stderr 基础日志。
+
+边界需要明确：
+
+```text
+AgentDocks：Sandbox、Pod、资源和生命周期监控
+AgentLens：模型调用、工具调用、文件变化、任务诊断和失败归因
+```
+
+### 3.4 统一管理界面
+
+借鉴 ClawFleet 的 Fleet 视图，不再让用户只面对一组 Sandbox ID。
+
+建议页面层级：
+
+```text
+Task List
+  ↓
+Task Detail
+  ├── Explorer Agent Card
+  ├── Tester Agent Card
+  └── Reviewer Agent Card
+        ↓
+Agent Detail
+  ├── Sandbox / Pod
+  ├── Resource
+  ├── Status Events
+  ├── Logs
+  └── Stop / Retry / Delete
+```
+
+这会让项目从“调用 Sandbox API”变成真正可演示的 Agent Runtime 管理系统。
+
+### 3.5 不应误解 ClawFleet 的“调度”能力
+
+ClawFleet 主要实现的是：
+
+> 一台机器上多个长期 Agent 容器的创建、运行、监控和管理。
+
+它没有完整实现本项目需要的：
+
+- 任务依赖调度。
+- 等待队列。
+- 最大并发额度。
+- 上游完成后唤醒下游。
+- 失败后创建干净沙箱重试。
+- 临时 Agent 完成后的自动回收。
+
+因此 AgentDocks 中有三层不同职责：
+
+```text
+第一层：ClawFleet 风格的实例管理和 Monitoring
+- 看得见、管得住每个 Agent
+
+第二层：自己实现的最小 Agent Scheduler
+- 决定哪个 Agent 现在运行、哪个等待、何时重试
+
+第三层：Agent Sandbox + Kubernetes
+- 创建 Sandbox，并决定 Pod 最终运行在哪个节点
+```
+
+---
+
+## 四、为什么不以 ClawFleet 为底座
 
 ClawFleet 的当前结构是：
 
@@ -124,13 +283,15 @@ ClawFleet
 - 超时删除和异常清理。
 - Agent 到 Pod 的映射。
 
-这不是“小改造”，而是把 ClawFleet 的底层执行系统重新写一遍。一个月内投入产出比不高，并且会重复 Agent Sandbox 已经完成的能力。
+这不是小改造，而是把 ClawFleet 的底层执行系统重新写一遍。一个月内投入产出比不高，并且会重复 Agent Sandbox 已完成的能力。
 
-因此，ClawFleet 应作为产品和交互参考，而不是代码底座。
+因此：
+
+> **ClawFleet 是产品设计、实例管理和 Monitoring 参考；Agent Sandbox 才是代码与基础设施底座。**
 
 ---
 
-## 四、项目的最小闭环
+## 五、项目的最小闭环
 
 上层只部署一套很小的 Multi-Agent 仓库分析系统，用于证明 Sandbox 资源确实服务于真实 Agent 任务。
 
@@ -160,13 +321,17 @@ Reviewer Agent
 ```text
 创建任务
    ↓
-Explorer 与 Tester 并行申请 Sandbox
+Explorer 与 Tester 进入调度队列
+   ↓
+为两个 Agent 创建独立 Sandbox
    ↓
 Kubernetes 调度两个 Pod
    ↓
 保存两个 Agent 的产物
    ↓
 回收前两个 Sandbox
+   ↓
+唤醒 Reviewer
    ↓
 Reviewer 申请新 Sandbox
    ↓
@@ -177,9 +342,9 @@ Reviewer 申请新 Sandbox
 
 ---
 
-## 五、MVP 需要实现的能力
+## 六、MVP 需要实现的能力
 
-### 1. Agent 与 Sandbox 一一绑定
+### 6.1 Agent 与 Sandbox 一一绑定
 
 记录：
 
@@ -194,7 +359,7 @@ status
 retry_count
 ```
 
-### 2. 最小 Agent 调度
+### 6.2 最小 Agent 调度
 
 只实现：
 
@@ -208,7 +373,7 @@ retry_count
 - Agent 调度器决定哪个 Agent 现在运行。
 - Kubernetes Scheduler 决定 Pod 放到哪个节点。
 
-### 3. 生命周期状态
+### 6.3 生命周期状态
 
 ```text
 PENDING
@@ -220,7 +385,7 @@ PENDING
 → RECYCLED
 ```
 
-### 4. 最小错误恢复
+### 6.4 最小错误恢复
 
 只实现三种：
 
@@ -228,9 +393,11 @@ PENDING
 - Agent 超时，终止并回收 Sandbox。
 - Agent 执行失败，创建一个新的干净 Sandbox 重试一次。
 
-### 5. 管理界面
+### 6.5 ClawFleet 风格管理界面
 
-在 Agent Sandbox 现有 UI 上增加一个任务页面，展示：
+在 Agent Sandbox 现有 UI 上增加 Task / AgentRun 页面，借鉴 ClawFleet 的 Agent 卡片和 Fleet 视图。
+
+展示：
 
 ```text
 Agent       状态       Sandbox       Pod       CPU/内存       重试
@@ -243,17 +410,21 @@ Reviewer    Waiting    -             -         0.5C/512Mi     0
 
 - 创建任务。
 - 查看 Agent 状态。
-- 查看基础运行日志。
-- 手动取消任务。
+- 查看 Sandbox / Pod 映射。
+- 查看基础资源信息。
+- 查看实时或轮询日志。
+- 查看生命周期事件。
+- 手动停止、重试和删除 AgentRun。
 - 查看最终报告。
 
 深度 Trace、失败归因和评测由 AgentLens 项目负责，本项目不重复实现。
 
 ---
 
-## 六、一个月内明确不做
+## 七、一个月内明确不做
 
 - 不把 ClawFleet 整体迁移到 Kubernetes。
+- 不直接复制 ClawFleet 的完整资产、角色和渠道系统。
 - 不重写 Kubernetes Scheduler。
 - 不实现通用 Multi-Agent 工作流平台。
 - 不做复杂 DAG 编辑器。
@@ -268,37 +439,43 @@ Reviewer    Waiting    -             -         0.5C/512Mi     0
 
 ---
 
-## 七、最终架构
+## 八、最终架构
 
 ```text
-Web UI
-  ↓
+ClawFleet-style Web UI
+  ├── Task / Agent Fleet View
+  ├── Agent Cards
+  ├── Status / Resource
+  ├── Logs / Events
+  └── Start / Stop / Retry / Delete
+              ↓
 Task / AgentRun API
-  ↓
+              ↓
 Minimal Agent Scheduler
   ├── 并发限制
+  ├── 等待队列
   ├── 依赖唤醒
   ├── 超时控制
   └── 失败重试
-  ↓
+              ↓
 Agent Sandbox
   ├── Sandbox 创建与删除
   ├── 资源配置
   ├── Pool / 生命周期
   └── Kubernetes 接入
-  ↓
+              ↓
 Kubernetes
   ├── Pod 调度
   ├── CPU / 内存限制
   ├── Pod 状态管理
   └── 异常容器处理
-  ↓
+              ↓
 Explorer / Tester / Reviewer Agent Containers
 ```
 
 ---
 
-## 八、项目表述
+## 九、项目表述
 
 项目不应描述为：
 
@@ -310,7 +487,7 @@ Explorer / Tester / Reviewer Agent Containers
 
 建议表述为：
 
-> 基于 Agent Sandbox 构建 Kubernetes 原生的 Multi-Agent Sandbox 执行系统，为每个 Agent 动态分配独立 Sandbox Pod，并实现 Agent 级并发控制、资源配置、依赖调度、生命周期管理、失败重试和自动回收；通过多 Agent 仓库分析任务完成端到端验证。
+> 基于 Agent Sandbox 构建 Kubernetes 原生的 Multi-Agent Sandbox 执行系统，为每个 Agent 动态分配独立 Sandbox Pod，并实现 Agent 级并发控制、资源配置、依赖调度、生命周期管理、失败重试和自动回收；产品层借鉴 ClawFleet 的 Agent Fleet 管理模式，提供 Agent 实例、资源状态、运行日志与生命周期事件的统一管理界面，并通过多 Agent 仓库分析任务完成端到端验证。
 
 这个项目在个人项目组合中的职责非常明确：
 
