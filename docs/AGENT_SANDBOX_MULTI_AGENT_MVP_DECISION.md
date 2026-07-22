@@ -2,7 +2,8 @@
 
 > 决策日期：2026 年 7 月  
 > 基础项目：[agent-sandbox/agent-sandbox](https://github.com/agent-sandbox/agent-sandbox)  
-> 产品与管理参考：[clawfleet/ClawFleet](https://github.com/clawfleet/ClawFleet)
+> 产品与管理参考：[clawfleet/ClawFleet](https://github.com/clawfleet/ClawFleet)  
+> 本文取代《Agent-Sandbox 复现与生产化增强计划》，其底座复现与基线验证部分已并入本文第五节；原计划的 Lease + Prometheus 增强主线不再执行。
 
 ## 一、最终结论
 
@@ -291,7 +292,86 @@ ClawFleet
 
 ---
 
-## 五、项目的最小闭环
+## 五、前置阶段：底座复现与基线验证
+
+> 本节合并自原《Agent-Sandbox 复现与生产化增强计划》。在实现 Multi-Agent MVP 之前，必须先跑通并验证底座；底座指标不达标时先修底座，再建上层。
+
+### 5.1 开发环境
+
+- Mac 本地：Docker Desktop / OrbStack + kind 或 minikube，Kubernetes 1.26+。用于跑通安装、阅读源码、调试 API 和 Controller、验证基本生命周期。
+- Linux 云服务器（Ubuntu 22.04/24.04，x86_64，8 核 16 GB，单节点 k3s 起步）：并发实验、Controller 重启、资源不足实验和长时间稳定性测试。Apple Silicon 遇到镜像架构问题时不要在本地纠缠，直接迁移到 x86_64。
+- 源码修改放在上游 Fork（`agent-sandbox/agent-sandbox` → 个人 Fork）；本仓库只放部署配置、验证脚本、实验数据、复现报告和不适合合入上游的扩展组件。README 和简历必须清楚区分上游已有能力、个人实现的改动、个人完成的实验与结论。
+- 云服务器部署时：必须更换默认管理 Token，不直接向公网开放 `/ui`、API 和 Kubernetes 管理端口，优先通过防火墙、VPN 或 SSH 端口转发访问。
+
+### 5.2 阶段一：完整复现 Agent Sandbox（2～4 天）
+
+必须实际跑通：
+
+- UI 登录。
+- 创建 Sandbox。
+- 查看 Sandbox 状态。
+- 访问 Shell 或 Terminal。
+- 文件读写。
+- 执行代码。
+- 访问 Browser 或 VNC 环境。
+- 暂停与恢复。
+- 超时自动回收。
+- 手动删除。
+- REST API 调用。
+- MCP 调用。
+- E2B SDK 兼容调用。
+- Sandbox Pool 的创建和复用。
+
+输出 `docs/REPRODUCTION_REPORT.md`，内容必须包括：
+
+- 操作系统、CPU 架构、Kubernetes 版本。
+- 完整安装命令。
+- 成功运行的功能与没有跑通的功能。
+- 实际架构图。
+- 关键 Controller、API、Pool 和 Sandbox 生命周期代码入口。
+- 本地环境遇到的问题。
+- 与 README 宣传不一致的地方。
+
+### 5.3 阶段二：基线验证场景
+
+每个场景都必须可以通过脚本重复执行，并给出确定性结果：
+
+| 场景 | 需要验证的内容 |
+|---|---|
+| 正常生命周期 | 创建、访问、暂停、恢复、删除是否正确 |
+| 超时回收 | TTL 到期后是否及时删除，状态是否一致 |
+| 空闲回收 | 没有活动的 Sandbox 是否按预期回收 |
+| 重复请求 | 重复创建或删除是否幂等 |
+| Controller 重启 | 重启后是否继续管理已有 Sandbox |
+| 并发创建 | 1、10、30 个并发请求下的成功率与延迟 |
+| 资源不足 | CPU、内存不足时是否明确失败并正确清理 |
+| Pool 复用 | Pool 命中率、复用延迟和脏状态问题 |
+| 异常 Sandbox | Sandbox 进程或 Pod 异常退出后的状态收敛 |
+| API 中断 | 客户端断开后任务是否出现泄漏 |
+| 多租户 | 不同租户和 Session 是否发生状态或数据串扰 |
+| Controller 多副本 | 是否出现重复回收、重复创建或竞争处理 |
+
+统一记录：
+
+- 请求数量、成功数量、失败数量。
+- 创建延迟 p50 / p95 / p99、删除延迟、超时误差。
+- 残留 Pod 数量、状态不一致数量。
+- Controller 重启后的恢复时间。
+- Pool 命中率。
+
+输出：
+
+```text
+tests/scenarios/
+scripts/benchmark/
+docs/BASELINE_REPORT.md
+```
+
+基线验证的意义：Multi-Agent MVP 的 Agent 调度层直接建立在 Sandbox 创建、超时回收和 Pool 复用之上，这些指标就是上层并发额度、超时和重试配置的输入。
+
+---
+
+## 六、项目的最小闭环
 
 上层只部署一套很小的 Multi-Agent 仓库分析系统，用于证明 Sandbox 资源确实服务于真实 Agent 任务。
 
@@ -342,7 +422,7 @@ Reviewer 申请新 Sandbox
 
 ---
 
-## 六、MVP 需要实现的能力
+## 七、MVP 需要实现的能力
 
 ### 6.1 Agent 与 Sandbox 一一绑定
 
@@ -421,7 +501,7 @@ Reviewer    Waiting    -             -         0.5C/512Mi     0
 
 ---
 
-## 七、一个月内明确不做
+## 八、一个月内明确不做
 
 - 不把 ClawFleet 整体迁移到 Kubernetes。
 - 不直接复制 ClawFleet 的完整资产、角色和渠道系统。
@@ -439,7 +519,7 @@ Reviewer    Waiting    -             -         0.5C/512Mi     0
 
 ---
 
-## 八、最终架构
+## 九、最终架构
 
 ```text
 ClawFleet-style Web UI
@@ -475,7 +555,7 @@ Explorer / Tester / Reviewer Agent Containers
 
 ---
 
-## 九、项目表述
+## 十、项目表述
 
 项目不应描述为：
 
