@@ -1,0 +1,6 @@
+[submodule "reference/agent-sandbox"]
+	path = reference/agent-sandbox
+	url = https://github.com/PacemakerG/agent-sandbox
+[submodule "reference/ClawFleet"]
+	path = reference/ClawFleet
+	url = https://github.com/clawfleet/ClawFleet
